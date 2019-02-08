@@ -42,40 +42,6 @@ static void cmd_buffer_clear(const struct shell *shell)
 	shell->ctx->cmd_buff_len = 0;
 }
 
-static inline void prompt_print(const struct shell *shell)
-{
-	/* Below cannot be printed by shell_fprinf because it will cause
-	 * interrupt spin
-	 */
-	if (IS_ENABLED(CONFIG_SHELL_VT100_COLORS) &&
-	    shell->ctx->internal.flags.use_colors &&
-	    (SHELL_INFO != shell->ctx->vt100_ctx.col.col)) {
-		struct shell_vt100_colors col;
-
-		shell_vt100_colors_store(shell, &col);
-		shell_vt100_color_set(shell, SHELL_INFO);
-		shell_raw_fprintf(shell->fprintf_ctx, "%s", shell->prompt);
-		shell_vt100_colors_restore(shell, &col);
-	} else {
-		shell_raw_fprintf(shell->fprintf_ctx, "%s", shell->prompt);
-	}
-}
-
-static inline void cmd_print(const struct shell *shell)
-{
-	shell_raw_fprintf(shell->fprintf_ctx, "%s", shell->ctx->cmd_buff);
-}
-
-static void cmd_line_print(const struct shell *shell)
-{
-	prompt_print(shell);
-
-	if (flag_echo_get(shell)) {
-		cmd_print(shell);
-		shell_op_cursor_position_synchronize(shell);
-	}
-}
-
 /**
  * @brief Prints error message on wrong argument count.
  *	  Optionally, printing help on wrong argument count.
@@ -110,7 +76,7 @@ static void state_set(const struct shell *shell, enum shell_state state)
 
 	if (state == SHELL_STATE_ACTIVE) {
 		cmd_buffer_clear(shell);
-		prompt_print(shell);
+		shell_print_prompt_and_cmd(shell);
 	}
 }
 
@@ -224,7 +190,7 @@ static void history_handle(const struct shell *shell, bool up)
 
 	shell_op_cursor_home_move(shell);
 	clear_eos(shell);
-	cmd_print(shell);
+	shell_print_cmd(shell);
 	shell->ctx->cmd_buff_pos = len;
 	shell->ctx->cmd_buff_len = len;
 	shell_op_cond_next_line(shell);
@@ -478,7 +444,7 @@ static void tab_options_print(const struct shell *shell,
 	}
 
 	cursor_next_line_move(shell);
-	cmd_line_print(shell);
+	shell_print_prompt_and_cmd(shell);
 }
 
 static u16_t common_beginning_find(const struct shell_static_entry *cmd,
@@ -537,14 +503,17 @@ static void partial_autocomplete(const struct shell *shell,
 }
 
 static int exec_cmd(const struct shell *shell, size_t argc, char **argv,
-		    struct shell_static_entry help_entry)
+		    const struct shell_static_entry *help_entry)
 {
 	int ret_val = 0;
 
 	if (shell->ctx->active_cmd.handler == NULL) {
-		if ((help_entry.help) && IS_ENABLED(CONFIG_SHELL_HELP)) {
-			if (help_entry.help != shell->ctx->active_cmd.help) {
-				shell->ctx->active_cmd = help_entry;
+		if ((help_entry != NULL) && IS_ENABLED(CONFIG_SHELL_HELP)) {
+			if (help_entry->help == NULL) {
+				return -ENOEXEC;
+			}
+			if (help_entry->help != shell->ctx->active_cmd.help) {
+				shell->ctx->active_cmd = *help_entry;
 			}
 			shell_help(shell);
 			return SHELL_CMD_HELP_PRINTED;
@@ -748,7 +717,7 @@ static int execute(const struct shell *shell)
 
 	/* Executing the deepest found handler. */
 	return exec_cmd(shell, argc - cmd_with_handler_lvl,
-			&argv[cmd_with_handler_lvl], help_entry);
+			&argv[cmd_with_handler_lvl], &help_entry);
 }
 
 static void tab_handle(const struct shell *shell)
@@ -840,7 +809,7 @@ static void ctrl_metakeys_handle(const struct shell *shell, char data)
 	case SHELL_VT100_ASCII_CTRL_L: /* CTRL + L */
 		SHELL_VT100_CMD(shell, SHELL_VT100_CURSORHOME);
 		SHELL_VT100_CMD(shell, SHELL_VT100_CLEARSCREEN);
-		cmd_line_print(shell);
+		shell_print_prompt_and_cmd(shell);
 		break;
 
 	case SHELL_VT100_ASCII_CTRL_U: /* CTRL + U */
@@ -1069,19 +1038,21 @@ static void transport_evt_handler(enum shell_transport_evt evt_type, void *ctx)
 
 static void shell_log_process(const struct shell *shell)
 {
-	bool processed;
+	bool processed = false;
 	int signaled = 0;
 	int result;
 
 	do {
-		shell_cmd_line_erase(shell);
+		if (!IS_ENABLED(CONFIG_LOG_IMMEDIATE)) {
+			shell_cmd_line_erase(shell);
 
-		processed = shell_log_backend_process(shell->log_backend);
+			processed = shell_log_backend_process(shell->log_backend);
+		}
 
 		struct k_poll_signal *signal =
 			&shell->ctx->signals[SHELL_SIGNAL_RXRDY];
 
-		cmd_line_print(shell);
+		shell_print_prompt_and_cmd(shell);
 
 		/* Arbitrary delay added to ensure that prompt is
 		 * readable and can be used to enter further commands.
@@ -1201,7 +1172,7 @@ void shell_thread(void *shell_handle, void *arg_log_backend,
 				  &shell->ctx->signals[i]);
 	}
 
-	err = shell_start(shell);
+	err = shell->iface->api->enable(shell->iface, false);
 	if (err != 0) {
 		return;
 	}
@@ -1209,6 +1180,12 @@ void shell_thread(void *shell_handle, void *arg_log_backend,
 	if (log_backend && IS_ENABLED(CONFIG_LOG)) {
 		shell_log_backend_enable(shell->log_backend, (void *)shell,
 					 log_level);
+	}
+
+	/* Enable shell and print prompt. */
+	err = shell_start(shell);
+	if (err != 0) {
+		return;
 	}
 
 	while (true) {
@@ -1222,7 +1199,6 @@ void shell_thread(void *shell_handle, void *arg_log_backend,
 			shell_error(shell, "Shell thread error: %d", err);
 			return;
 		}
-
 
 		if (shell->iface->api->update) {
 			shell->iface->api->update(shell->iface);
@@ -1285,15 +1261,8 @@ int shell_start(const struct shell *shell)
 	__ASSERT_NO_MSG(shell);
 	__ASSERT_NO_MSG(shell->ctx && shell->iface && shell->prompt);
 
-	int err;
-
 	if (shell->ctx->state != SHELL_STATE_INITIALIZED) {
 		return -ENOTSUP;
-	}
-
-	err = shell->iface->api->enable(shell->iface, false);
-	if (err != 0) {
-		return err;
 	}
 
 	if (IS_ENABLED(CONFIG_SHELL_VT100_COLORS)) {
@@ -1392,7 +1361,7 @@ void shell_fprintf(const struct shell *shell, enum shell_vt100_color color,
 	va_end(args);
 
 	if (k_current_get() != shell->ctx->tid) {
-		cmd_line_print(shell);
+		shell_print_prompt_and_cmd(shell);
 		transport_buffer_flush(shell);
 		k_mutex_unlock(&shell->ctx->wr_mtx);
 	}

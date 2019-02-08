@@ -66,7 +66,12 @@ int  lwm2m_get_or_create_engine_obj(struct lwm2m_message *msg,
 				    u8_t *created);
 
 /* LwM2M context functions */
+int lwm2m_engine_context_close(struct lwm2m_ctx *client_ctx);
 void lwm2m_engine_context_init(struct lwm2m_ctx *client_ctx);
+
+/* Message buffer functions */
+u8_t *lwm2m_get_message_buf(void);
+int lwm2m_put_message_buf(u8_t *buf);
 
 /* LwM2M message functions */
 struct lwm2m_message *lwm2m_get_message(struct lwm2m_ctx *client_ctx);
@@ -84,13 +89,9 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 			struct lwm2m_engine_obj_field *obj_field,
 			struct lwm2m_message *msg);
 
-void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, struct net_pkt *pkt,
-		       bool handle_separate_response,
-		       udp_request_handler_cb_t udp_request_handler);
-
 enum coap_block_size lwm2m_default_block_size(void);
 
-int lwm2m_engine_add_service(void (*service)(void), u32_t period_ms);
+int lwm2m_engine_add_service(k_work_handler_t service, u32_t period_ms);
 
 int lwm2m_engine_get_resource(char *pathstr,
 			      struct lwm2m_engine_res_inst **res);
@@ -98,11 +99,20 @@ int lwm2m_engine_get_resource(char *pathstr,
 size_t lwm2m_engine_get_opaque_more(struct lwm2m_input_context *in,
 				    u8_t *buf, size_t buflen, bool *last_block);
 
+int lwm2m_security_inst_id_to_index(u16_t obj_inst_id);
+int lwm2m_security_index_to_inst_id(int index);
+
 #if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_OBJ_SUPPORT)
 u8_t lwm2m_firmware_get_update_state(void);
 void lwm2m_firmware_set_update_state(u8_t state);
 void lwm2m_firmware_set_update_result(u8_t result);
 u8_t lwm2m_firmware_get_update_result(void);
 #endif
+
+/* Network Layer */
+int  lwm2m_socket_add(struct lwm2m_ctx *ctx);
+void lwm2m_socket_del(struct lwm2m_ctx *ctx);
+int  lwm2m_socket_start(struct lwm2m_ctx *client_ctx);
+int  lwm2m_parse_peerinfo(char *url, struct sockaddr *addr, bool *use_dtls);
 
 #endif /* LWM2M_ENGINE_H */

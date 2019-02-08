@@ -1,7 +1,10 @@
 /*
  * Copyright (c) 2017 Linaro Limited
  * Copyright (c) 2018 Intel Corporation
+<<<<<<< HEAD
  * Copyright (c) 2019 Marc Pignat
+=======
+>>>>>>> master
  *
  * SPDX-License-Identifier: Apache-2.0
  */

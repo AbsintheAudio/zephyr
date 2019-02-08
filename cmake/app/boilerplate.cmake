@@ -255,6 +255,12 @@ else()
   set(SOC_DIR ${SOC_ROOT}/soc)
 endif()
 
+if(NOT ARCH_ROOT)
+  set(ARCH_DIR ${ZEPHYR_BASE}/arch)
+else()
+  set(ARCH_DIR ${ARCH_ROOT}/arch)
+endif()
+
 # Use BOARD to search for a '_defconfig' file.
 # e.g. zephyr/boards/arm/96b_carbon_nrf51/96b_carbon_nrf51_defconfig.
 # When found, use that path to infer the ARCH we are building for.
@@ -391,6 +397,7 @@ include(${ZEPHYR_BASE}/cmake/host-tools.cmake)
 # both DT and Kconfig we complete the target-specific configuration,
 # and possibly change the toolchain.
 include(${ZEPHYR_BASE}/cmake/generic_toolchain.cmake)
+include(${ZEPHYR_BASE}/cmake/dts.cmake)
 include(${ZEPHYR_BASE}/cmake/kconfig.cmake)
 
 set(SOC_NAME   ${CONFIG_SOC})
@@ -402,8 +409,6 @@ if("${SOC_SERIES}" STREQUAL "")
 else()
   set(SOC_PATH ${SOC_FAMILY}/${SOC_SERIES})
 endif()
-
-include(${ZEPHYR_BASE}/cmake/dts.cmake)
 
 include(${ZEPHYR_BASE}/cmake/target_toolchain.cmake)
 

@@ -7,6 +7,8 @@
 #ifndef ZEPHYR_INCLUDE_POWER_H_
 #define ZEPHYR_INCLUDE_POWER_H_
 
+#include <zephyr/types.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,6 +30,36 @@ extern unsigned char sys_pm_idle_exit_notify;
  * @{
  * @}
  */
+
+/**
+ * @brief Power Management states.
+ */
+enum power_states {
+#ifdef CONFIG_SYS_POWER_LOW_POWER_STATE
+# ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_SUPPORTED
+	SYS_POWER_STATE_CPU_LPS,
+# endif
+# ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_1_SUPPORTED
+	SYS_POWER_STATE_CPU_LPS_1,
+# endif
+# ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_2_SUPPORTED
+	SYS_POWER_STATE_CPU_LPS_2,
+# endif
+#endif /* CONFIG_SYS_POWER_LOW_POWER_STATE */
+
+#ifdef CONFIG_SYS_POWER_DEEP_SLEEP
+# ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_SUPPORTED
+	SYS_POWER_STATE_DEEP_SLEEP,
+# endif
+# ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_1_SUPPORTED
+	SYS_POWER_STATE_DEEP_SLEEP_1,
+# endif
+# ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_2_SUPPORTED
+	SYS_POWER_STATE_DEEP_SLEEP_2,
+# endif
+#endif /* CONFIG_SYS_POWER_DEEP_SLEEP */
+	SYS_POWER_STATE_MAX
+};
 
 /**
  * @brief Power Management Hooks
@@ -130,25 +162,38 @@ extern void sys_pm_dump_debug_info(void);
 
 #ifdef CONFIG_PM_CONTROL_STATE_LOCK
 /**
- * @brief Disable system PM state
+ * @brief Disable particular power state
  *
- * Disable system Low power states like LPS or Deep Sleep states.
+ * @details Disabled state cannot be selected by the Zephyr power
+ *	    management policies. Application defined policy should
+ *	    use the @ref sys_pm_ctrl_is_state_enabled function to
+ *	    check if given state could is enabled and could be used.
+ *
+ * @param [in] state Power state to be disabled.
  */
-extern void sys_pm_ctrl_disable_state(int state);
+extern void sys_pm_ctrl_disable_state(enum power_states state);
 
 /**
- * @brief Enable system PM state
+ * @brief Enable particular power state
  *
- * Enable system Low power states like LPS or Deep Sleep states.
+ * @details Enabled state can be selected by the Zephyr power
+ *	    management policies. Application defined policy should
+ *	    use the @ref sys_pm_ctrl_is_state_enabled function to
+ *	    check if given state could is enabled and could be used.
+ *	    By default all power states are enabled.
+ *
+ * @param [in] state Power state to be enabled.
  */
-extern void sys_pm_ctrl_enable_state(int state);
+extern void sys_pm_ctrl_enable_state(enum power_states state);
 
 /**
- * @brief Get enable status of a PM state
+ * @brief Check if particular power state is enabled
  *
- * Get enable status of a system PM state.
+ * This function returns true if given power state is enabled.
+ *
+ * @param [in] state Power state.
  */
-extern bool sys_pm_ctrl_is_state_enabled(int state);
+extern bool sys_pm_ctrl_is_state_enabled(enum power_states state);
 
 #endif /* CONFIG_PM_CONTROL_STATE_LOCK */
 

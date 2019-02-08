@@ -56,6 +56,8 @@
 #include <net/coap.h>
 #include <net/lwm2m.h>
 
+#include "buf_util.h"
+
 /* #####/###/#####/### + NULL */
 #define MAX_RESOURCE_LEN	20
 
@@ -126,6 +128,13 @@
 /* remember that we have already output a value - can be between two block's */
 #define WRITER_OUTPUT_VALUE      1
 #define WRITER_RESOURCE_INSTANCE 2
+
+#define MAX_PACKET_SIZE		(CONFIG_LWM2M_COAP_BLOCK_SIZE + \
+				 CONFIG_LWM2M_ENGINE_MESSAGE_HEADER_SIZE)
+
+/* buffer util macros */
+#define CPKT_BUF_WRITE(cpkt)	(cpkt)->data, &(cpkt)->offset, (cpkt)->max_len
+#define CPKT_BUF_READ(cpkt)	(cpkt)->data, (cpkt)->max_len
 
 struct lwm2m_engine_obj;
 struct lwm2m_message;
@@ -260,12 +269,6 @@ struct lwm2m_output_context {
 	const struct lwm2m_writer *writer;
 	struct coap_packet *out_cpkt;
 
-	/* current write fragment in net_buf chain */
-	struct net_buf *frag;
-
-	/* current write position in net_buf chain */
-	u16_t offset;
-
 	/* private output data */
 	void *user_data;
 };
@@ -274,15 +277,14 @@ struct lwm2m_input_context {
 	const struct lwm2m_reader *reader;
 	struct coap_packet *in_cpkt;
 
-	/* current read position in net_buf chain */
-	struct net_buf *frag;
+	/* current position in buffer */
 	u16_t offset;
-
-	/* length of incoming coap/lwm2m payload */
-	u16_t payload_len;
 
 	/* length of incoming opaque */
 	u16_t opaque_len;
+
+	/* private output data */
+	void *user_data;
 };
 
 /* Establish a message timeout callback */
@@ -302,6 +304,9 @@ struct lwm2m_message {
 
 	/** CoAP packet data related to the outgoing message */
 	struct coap_packet cpkt;
+
+	/** Buffer data related outgoing message */
+	u8_t msg_data[MAX_PACKET_SIZE];
 
 	/** Message transmission handling for TYPE_CON */
 	struct coap_pending *pending;
@@ -404,6 +409,23 @@ static inline void
 engine_clear_out_user_data(struct lwm2m_output_context *out)
 {
 	out->user_data = NULL;
+}
+
+static inline void engine_set_in_user_data(struct lwm2m_input_context *in,
+					   void *user_data)
+{
+	in->user_data = user_data;
+}
+
+static inline void *engine_get_in_user_data(struct lwm2m_input_context *in)
+{
+	return in->user_data;
+}
+
+static inline void
+engine_clear_in_user_data(struct lwm2m_input_context *in)
+{
+	in->user_data = NULL;
 }
 
 /* inline multi-format write / read functions */

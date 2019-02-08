@@ -292,16 +292,19 @@ struct shell_transport_api {
 	int (*uninit)(const struct shell_transport *transport);
 
 	/**
-	 * @brief Function for reconfiguring the transport to work in blocking
-	 * mode.
+	 * @brief Function for enabling transport in given TX mode.
 	 *
-	 * @param transport  Pointer to the transfer instance.
-	 * @param blocking   If true, the transport is enabled in blocking mode.
+	 * Function can be used to reconfigure TX to work in blocking mode.
+	 *
+	 * @param transport   Pointer to the transfer instance.
+	 * @param blocking_tx If true, the transport TX is enabled in blocking
+	 *		      mode.
 	 *
 	 * @return NRF_SUCCESS on successful enabling, error otherwise (also if
 	 * not supported).
 	 */
-	int (*enable)(const struct shell_transport *transport, bool blocking);
+	int (*enable)(const struct shell_transport *transport,
+		      bool blocking_tx);
 
 	/**
 	 * @brief Function for writing data to the transport interface.
@@ -490,7 +493,7 @@ extern void shell_print_stream(const void *user_ctx, const char *data,
 	SHELL_LOG_BACKEND_DEFINE(_name, _name##_out_buffer,		      \
 				 CONFIG_SHELL_PRINTF_BUFF_SIZE,		      \
 				 _log_queue_size, _log_timeout);	      \
-	SHELL_HISTORY_DEFINE(_name, 128, 8);/*todo*/			      \
+	SHELL_HISTORY_DEFINE(_name, CONFIG_SHELL_CMD_BUFF_SIZE, 7);	      \
 	SHELL_FPRINTF_DEFINE(_name##_fprintf, &_name, _name##_out_buffer,     \
 			     CONFIG_SHELL_PRINTF_BUFF_SIZE,		      \
 			     true, shell_print_stream);			      \

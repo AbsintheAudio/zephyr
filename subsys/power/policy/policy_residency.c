@@ -72,22 +72,21 @@ int sys_pm_policy_next_state(s32_t ticks, enum power_states *pm_state)
 		return SYS_PM_NOT_HANDLED;
 	}
 
-	for (i = 0; i < (ARRAY_SIZE(pm_policy) - 1); i++) {
-		if ((ticks >= pm_policy[i].min_residency) &&
-			       (ticks < pm_policy[i + 1].min_residency)) {
-			break;
+	for (i = ARRAY_SIZE(pm_policy) - 1; i >= 0; i--) {
+#ifdef CONFIG_PM_CONTROL_STATE_LOCK
+		if (!sys_pm_ctrl_is_state_enabled(pm_policy[i].pm_state)) {
+			continue;
+		}
+#endif
+		if ((ticks == K_FOREVER) ||
+		    (ticks >= pm_policy[i].min_residency)) {
+			*pm_state = pm_policy[i].pm_state;
+			LOG_DBG("ticks: %d, pm_state: %d, min_residency: %d\n",
+				ticks, *pm_state, pm_policy[i].min_residency);
+			return pm_policy[i].sys_state;
 		}
 	}
 
-	if (!sys_is_valid_power_state(pm_policy[i].pm_state)) {
-		LOG_ERR("pm_state(%d) not supported by SoC\n",
-						pm_policy[i].pm_state);
-		return SYS_PM_NOT_HANDLED;
-	}
-
-	*pm_state = pm_policy[i].pm_state;
-	LOG_DBG("pm_state: %d, min_residency: %d, idx: %d\n",
-				*pm_state, pm_policy[i].min_residency, i);
-
-	return pm_policy[i].sys_state;
+	LOG_DBG("No suitable power state found!");
+	return SYS_PM_NOT_HANDLED;
 }

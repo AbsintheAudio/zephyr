@@ -521,8 +521,13 @@ static int ethernet_send(struct net_if *iface, struct net_pkt *pkt)
 	} else if (IS_ENABLED(CONFIG_NET_IPV6) &&
 		   net_pkt_family(pkt) == AF_INET6) {
 		ptype = htons(NET_ETH_PTYPE_IPV6);
+	} else if (IS_ENABLED(CONFIG_NET_SOCKETS_PACKET) &&
+		   net_pkt_family(pkt) == AF_PACKET) {
+		goto send;
 	} else if (IS_ENABLED(CONFIG_NET_GPTP) && net_pkt_is_gptp(pkt)) {
 		ptype = htons(NET_ETH_PTYPE_PTP);
+	} else if (IS_ENABLED(CONFIG_NET_LLDP) && net_pkt_is_lldp(pkt)) {
+		ptype = htons(NET_ETH_PTYPE_LLDP);
 	} else if (IS_ENABLED(CONFIG_NET_ARP)) {
 		/* Unktown type: Unqueued pkt is an ARP reply.
 		 */
@@ -559,6 +564,9 @@ static int ethernet_send(struct net_if *iface, struct net_pkt *pkt)
 		goto error;
 	}
 
+	net_pkt_cursor_init(pkt);
+
+send:
 	ret = api->send(net_if_get_device(iface), pkt);
 	if (ret != 0) {
 		eth_stats_update_errors_tx(iface);

@@ -57,19 +57,23 @@ static struct sys_pm_policy pm_policy[] = {
 int sys_pm_policy_next_state(s32_t ticks, enum power_states *pm_state)
 {
 	static int cur_pm_idx;
+	int i = cur_pm_idx;
 
-	if (cur_pm_idx >= ARRAY_SIZE(pm_policy)) {
-		cur_pm_idx = 0;
-	}
+	do {
+		i = (i + 1) % ARRAY_SIZE(pm_policy);
 
-	if (!sys_is_valid_power_state(pm_policy[cur_pm_idx].pm_state)) {
-		LOG_ERR("pm_state(%d) not supported by SoC\n",
-						pm_policy[cur_pm_idx].pm_state);
-		return SYS_PM_NOT_HANDLED;
-	}
+#ifdef CONFIG_PM_CONTROL_STATE_LOCK
+		if (!sys_pm_ctrl_is_state_enabled(pm_policy[i].pm_state)) {
+			continue;
+		}
+#endif
+		cur_pm_state = i;
+		*pm_state = pm_policy[cur_pm_state].pm_state;
 
-	*pm_state = pm_policy[cur_pm_idx].pm_state;
-	LOG_DBG("pm_state: %d, idx: %d\n", *pm_state, cur_pm_idx);
+		LOG_DBG("pm_state: %d, idx: %d\n", *pm_state, i);
+		return pm_policy[cur_pm_state].sys_state;
+	} while (i != curr_pm_idx);
 
-	return pm_policy[cur_pm_idx++].sys_state;
+	LOG_DBG("No suitable power state found!");
+	return SYS_PM_NOT_HANDLED;
 }

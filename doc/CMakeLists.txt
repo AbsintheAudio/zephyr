@@ -142,9 +142,11 @@ add_custom_target(
   KERNELVERSION=${KERNELVERSION}
   BOARD_DIR=boards/*/*/
   ARCH=*
+  ARCH_DIR=arch/
   SOC_DIR=soc/
   SRCARCH=x86
   KCONFIG_TURBO_MODE=${KCONFIG_TURBO_MODE}
+  KCONFIG_DOC_MODE=1
   ${PYTHON_EXECUTABLE} scripts/genrest.py Kconfig ${RST_OUT}/doc/reference/kconfig/
   WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
 )
