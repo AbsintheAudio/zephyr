@@ -20,14 +20,10 @@
 MMU_BOOT_REGION((u32_t)&_image_rom_start, (u32_t)&_image_rom_size,
 		MMU_ENTRY_READ | MMU_ENTRY_USER);
 
-#ifdef CONFIG_APPLICATION_MEMORY
-/* User threads by default can read/write app-level memory. */
-MMU_BOOT_REGION((u32_t)&__app_ram_start, (u32_t)&__app_ram_size,
-		MMU_ENTRY_WRITE | MMU_ENTRY_USER | MMU_ENTRY_EXECUTE_DISABLE);
-#endif
 #ifdef CONFIG_APP_SHARED_MEM
 MMU_BOOT_REGION((u32_t)&_app_smem_start, (u32_t)&_app_smem_size,
-		MMU_ENTRY_WRITE | MMU_ENTRY_USER | MMU_ENTRY_EXECUTE_DISABLE);
+		MMU_ENTRY_WRITE | MMU_ENTRY_RUNTIME_USER |
+		MMU_ENTRY_EXECUTE_DISABLE);
 #endif
 
 #ifdef CONFIG_COVERAGE_GCOV
@@ -292,29 +288,4 @@ int _arch_mem_domain_max_partitions_get(void)
 {
 	return CONFIG_MAX_DOMAIN_PARTITIONS;
 }
-
-#ifdef CONFIG_NEWLIB_LIBC
-static int newlib_mmu_prepare(struct device *unused)
-{
-	ARG_UNUSED(unused);
-	void *heap_base;
-	size_t heap_size;
-
-	z_newlib_get_heap_bounds(&heap_base, &heap_size);
-
-	/* Set up the newlib heap area as a globally user-writable region.
-	 * We can't do this at build time with MMU_BOOT_REGION() as the _end
-	 * pointer shifts significantly between build phases due to the
-	 * introduction of page tables.
-	 */
-	_x86_mmu_set_flags(heap_base, heap_size,
-			   MMU_ENTRY_PRESENT | MMU_ENTRY_WRITE |
-			   MMU_ENTRY_USER,
-			   MMU_PTE_P_MASK | MMU_PTE_RW_MASK | MMU_PTE_US_MASK);
-
-	return 0;
-}
-
-SYS_INIT(newlib_mmu_prepare, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
-#endif /* CONFIG_NEWLIB_LIBC */
 #endif	/* CONFIG_X86_USERSPACE*/

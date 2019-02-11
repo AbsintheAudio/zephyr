@@ -51,10 +51,10 @@ const char *devices[] = {
 	CONFIG_COUNTER_RTC2_NAME,
 #endif
 #ifdef CONFIG_COUNTER_IMX_EPIT_1
-	EPIT_1_LABEL,
+	DT_COUNTER_IMX_EPIT_1_LABEL,
 #endif
 #ifdef CONFIG_COUNTER_IMX_EPIT_2
-	EPIT_2_LABEL,
+	DT_COUNTER_IMX_EPIT_2_LABEL,
 #endif
 #ifdef DT_RTC_MCUX_0_NAME
 	DT_RTC_MCUX_0_NAME,
@@ -70,6 +70,10 @@ const char *devices[] = {
 #endif
 #ifdef DT_RTC_0_NAME
 	DT_RTC_0_NAME,
+#endif
+
+#ifdef CONFIG_COUNTER_0_NAME
+	CONFIG_COUNTER_0_NAME,
 #endif
 };
 typedef void (*counter_test_func_t)(const char *dev_name);
@@ -202,7 +206,7 @@ void test_single_shot_alarm_instance(const char *dev_name, bool set_top)
 	k_busy_wait(1.5*counter_ticks_to_us(dev, ticks));
 	zassert_equal(1, alarm_cnt, "Expecting alarm callback\n");
 
-	err = counter_disable_channel_alarm(dev, 0);
+	err = counter_cancel_channel_alarm(dev, 0);
 	zassert_equal(0, err, "Counter disabling alarm failed\n");
 
 	err = counter_set_top_value(dev, counter_get_max_top_value(dev),
@@ -300,10 +304,10 @@ void test_multiple_alarms_instance(const char *dev_name)
 			"Expected different order or callbacks\n");
 
 	/* tear down */
-	err = counter_disable_channel_alarm(dev, 0);
+	err = counter_cancel_channel_alarm(dev, 0);
 	zassert_equal(0, err, "Counter disabling alarm failed\n");
 
-	err = counter_disable_channel_alarm(dev, 1);
+	err = counter_cancel_channel_alarm(dev, 1);
 	zassert_equal(0, err, "Counter disabling alarm failed\n");
 }
 
@@ -350,12 +354,12 @@ void test_all_channels_instance(const char *str)
 	zassert_equal(nchan, alarm_cnt, "Expecting alarm callback\n");
 
 	for (int i = 0; i < nchan; i++) {
-		err = counter_disable_channel_alarm(dev, i);
+		err = counter_cancel_channel_alarm(dev, i);
 		zassert_equal(0, err, "Unexpected error on disabling alarm");
 	}
 
 	for (int i = nchan; i < n; i++) {
-		err = counter_disable_channel_alarm(dev, i);
+		err = counter_cancel_channel_alarm(dev, i);
 		zassert_equal(-ENOTSUP, err,
 				"Unexpected error on disabling alarm\n");
 	}
