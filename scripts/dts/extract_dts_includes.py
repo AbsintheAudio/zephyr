@@ -13,6 +13,7 @@ import os, fnmatch
 import re
 import yaml
 import argparse
+from collections import defaultdict
 from collections.abc import Mapping
 from copy import deepcopy
 
@@ -42,7 +43,7 @@ class Bindings(yaml.Loader):
     _included = []
 
     @classmethod
-    def bindings(cls, compats, yaml_dirs):
+    def bindings(cls, dts_compats, yaml_dirs):
         # Find all .yaml files in yaml_dirs
         cls._files = []
         for yaml_dir in yaml_dirs:
@@ -50,7 +51,11 @@ class Bindings(yaml.Loader):
                 for filename in fnmatch.filter(filenames, '*.yaml'):
                     cls._files.append(os.path.join(root, filename))
 
-        yaml_list = {'node': {}, 'bus': {}, 'compat': []}
+        compat_to_binding = {}
+        # Maps buses to dictionaries that map compats to YAML nodes
+        bus_to_binding = defaultdict(dict)
+        compats = []
+
         loaded_yamls = set()
 
         for file in cls._files:
@@ -64,65 +69,61 @@ class Bindings(yaml.Loader):
                 continue
 
             compat = match.group(1)
-            if compat not in compats or file in loaded_yamls:
+            if compat not in dts_compats or file in loaded_yamls:
                 # The compat does not appear in the device tree, or the yaml
                 # file has already been loaded
                 continue
 
+            # Found a binding (.yaml file) for a 'compatible' value that
+            # appears in DTS. Load it.
+
             loaded_yamls.add(file)
+
+            if compat not in compats:
+                compats.append(compat)
 
             with open(file, 'r', encoding='utf-8') as yf:
                 cls._included = []
-                l = yaml_traverse_inherited(file, yaml.load(yf, cls))
+                binding = merge_included_bindings(file, yaml.load(yf, cls))
 
-                if compat not in yaml_list['compat']:
-                    yaml_list['compat'].append(compat)
-
-                if 'parent' in l:
-                    bus = l['parent']['bus']
-                    if not bus in yaml_list['bus']:
-                        yaml_list['bus'][bus] = {}
-                    yaml_list['bus'][bus][compat] = l
+                if 'parent' in binding:
+                    bus_to_binding[binding['parent']['bus']][compat] = binding
                 else:
-                    yaml_list['node'][compat] = l
+                    compat_to_binding[compat] = binding
 
-        return yaml_list['node'], yaml_list['bus'], yaml_list['compat']
+        return compat_to_binding, bus_to_binding, compats
 
     def __init__(self, stream):
         filepath = os.path.realpath(stream.name)
         if filepath in self._included:
-            print("Error:: circular inclusion for file name '{}'".
+            print("Error: circular inclusion for file name '{}'".
                   format(stream.name))
             raise yaml.constructor.ConstructorError
         self._included.append(filepath)
         super(Bindings, self).__init__(stream)
         Bindings.add_constructor('!include', Bindings._include)
-        Bindings.add_constructor('!import',  Bindings._include)
 
     def _include(self, node):
+        # Implements !include. Returns a list with the top-level YAML
+        # structures for the included files (a single-element list if there's
+        # just one file).
+
         if isinstance(node, yaml.ScalarNode):
-            return self._extract_file(self.construct_scalar(node))
+            # !include foo.yaml
+            return [self._extract_file(self.construct_scalar(node))]
 
-        elif isinstance(node, yaml.SequenceNode):
-            result = []
-            for filename in self.construct_sequence(node):
-                result.append(self._extract_file(filename))
-            return result
+        if isinstance(node, yaml.SequenceNode):
+            # !include [foo.yaml, bar.yaml]
+            return [self._extract_file(fname)
+                    for fname in self.construct_sequence(node)]
 
-        elif isinstance(node, yaml.MappingNode):
-            result = {}
-            for k, v in self.construct_mapping(node).iteritems():
-                result[k] = self._extract_file(v)
-            return result
-
-        else:
-            print("Error:: unrecognised node type in !include statement")
-            raise yaml.constructor.ConstructorError
+        print("Error: unrecognised node type in !include statement")
+        raise yaml.constructor.ConstructorError
 
     def _extract_file(self, filename):
         filepaths = [filepath for filepath in self._files if filepath.endswith(filename)]
         if len(filepaths) == 0:
-            print("Error:: unknown file name '{}' in !include statement".
+            print("Error: unknown file name '{}' in !include statement".
                   format(filename))
             raise yaml.constructor.ConstructorError
         elif len(filepaths) > 1:
@@ -132,7 +133,7 @@ class Bindings(yaml.Loader):
                 if os.path.basename(filename) == os.path.basename(filepath):
                     files.append(filepath)
             if len(files) > 1:
-                print("Error:: multiple candidates for file name '{}' in !include statement".
+                print("Error: multiple candidates for file name '{}' in !include statement".
                       format(filename), filepaths)
                 raise yaml.constructor.ConstructorError
             filepaths = files
@@ -338,42 +339,16 @@ def dict_merge(parent, fname, dct, merge_dct):
             dct[k] = merge_dct[k]
 
 
-def yaml_traverse_inherited(fname, node):
-    """ Recursive overload procedure inside ``node``
-    ``inherits`` section is searched for and used as node base when found.
-    Base values are then overloaded by node values
-    and some consistency checks are done.
-    :param fname: initial yaml file being processed
-    :param node:
-    :return: node
-    """
+def merge_included_bindings(fname, node):
+    # Recursively merges properties from files !include'd from the 'inherits'
+    # section of the binding. 'fname' is the path to the top-level binding
+    # file, and 'node' the current top-level YAML node being processed.
 
-    # do some consistency checks. Especially id is needed for further
-    # processing. title must be first to check.
-    if 'title' not in node:
-        # If 'title' is missing, make fault finding more easy.
-        # Give a hint what node we are looking at.
-        print("extract_dts_includes.py: node without 'title' -", node)
-    for prop in ('title', 'version', 'description'):
-        if prop not in node:
-            node[prop] = "<unknown {}>".format(prop)
-            print("extract_dts_includes.py: '{}' property missing".format(prop),
-                  "in '{}' binding. Using '{}'.".format(node['title'], node[prop]))
-
-    # warn if we have an 'id' field
-    if 'id' in node:
-        print("extract_dts_includes.py: WARNING: id field set",
-              "in '{}', should be removed.".format(node['title']))
+    check_binding_properties(node)
 
     if 'inherits' in node:
-        if isinstance(node['inherits'], list):
-            inherits_list  = node['inherits']
-        else:
-            inherits_list  = [node['inherits'],]
-        node.pop('inherits')
-        for inherits in inherits_list:
-            if 'inherits' in inherits:
-                inherits = yaml_traverse_inherited(fname, inherits)
+        for inherits in node.pop('inherits'):
+            inherits = merge_included_bindings(fname, inherits)
             # title, description, version of inherited node
             # are overwritten by intention. Remove to prevent dct_merge to
             # complain about duplicates.
@@ -382,7 +357,27 @@ def yaml_traverse_inherited(fname, node):
             inherits.pop('description', None)
             dict_merge(None, fname, inherits, node)
             node = inherits
+
     return node
+
+
+def check_binding_properties(node):
+    # Checks that the top-level YAML node 'node' has the expected properties.
+    # Prints warnings and substitutes defaults otherwise.
+
+    if 'title' not in node:
+        print("extract_dts_includes.py: node without 'title' -", node)
+
+    for prop in 'title', 'version', 'description':
+        if prop not in node:
+            node[prop] = "<unknown {}>".format(prop)
+            print("extract_dts_includes.py: '{}' property missing "
+                  "in '{}' binding. Using '{}'."
+                  .format(prop, node['title'], node[prop]))
+
+    if 'id' in node:
+        print("extract_dts_includes.py: WARNING: id field set "
+              "in '{}', should be removed.".format(node['title']))
 
 
 def define_str(name, value, value_tabs, is_deprecated=False):
